@@ -1,9 +1,8 @@
 import numpy as np
 
-
 def euclidean_distance(point1, point2):
     """
-    Calculates the Euclidean distance between two points (represented as NumPy arrays).
+    Calculates the Euclidean distance between two points (As NumPy arrays).
     """
     return np.linalg.norm(point1 - point2)
 
@@ -50,22 +49,17 @@ def role_assignment(teammate_positions, formation_positions):
         dict: A dictionary mapping player unum (1-5) to their assigned
               formation position (NumPy array).
     """
-    # Step 1: Define Preference Lists
     players_preferences, roles_preferences = generate_preference_lists(
         teammate_positions, formation_positions
     )
 
     num_players = len(teammate_positions)
 
-    # Step 2: Initialize All Players and Roles as Free
     unmatched_players = list(range(num_players))
-    # current_matches maps role_index -> player_index
     current_matches = {role_idx: None for role_idx in range(len(formation_positions))}
 
-    # Keeps track of the next role a player should propose to
     next_proposal_for_player = {player_idx: 0 for player_idx in range(num_players)}
 
-    # Step 3 & 4: Proposal Loop
     while unmatched_players:
         proposing_player_idx = unmatched_players.pop(0)
 
@@ -101,12 +95,10 @@ def role_assignment(teammate_positions, formation_positions):
         # The player has now proposed to this role, so next time they'll try the next one
         next_proposal_for_player[proposing_player_idx] += 1
 
-    # Step 5: Format and Return Final Matches
+    # Format and Return Final Matches
     point_preferences = {}
     for role_idx, player_idx in current_matches.items():
-        # The unum is the player index + 1 (e.g., player 0 is unum 1)
         unum = player_idx + 1
-        # The value is the assigned formation position
         assigned_position = formation_positions[role_idx]
         point_preferences[unum] = assigned_position
 
