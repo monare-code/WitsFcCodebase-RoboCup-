@@ -6,7 +6,7 @@ import numpy as np
 from strategy.Assignment import role_assignment 
 from strategy.Strategy import Strategy 
 
-from formation.Formation import GenerateBasicFormation
+from formation.Formation import GenerateBasicFormation, GenerateStrategicFormation
 
 
 class Agent(Base_Agent):
@@ -209,31 +209,49 @@ class Agent(Base_Agent):
         
 
 
-
     def select_skill(self,strategyData):
-        #--------------------------------------- 2. Decide action
         drawer = self.world.draw
         path_draw_options = self.path_manager.draw_options
 
-
-        #------------------------------------------------------
-        #Role Assignment
-        if strategyData.active_player_unum == strategyData.robot_model.unum: # I am the active player 
-            drawer.annotation((0,10.5), "Role Assignment Phase" , drawer.Color.yellow, "status")
-        else:
-            drawer.clear("status")
-
+        # Calculate formation positions for all players
         formation_positions = GenerateBasicFormation()
-        point_preferences = role_assignment(strategyData.teammate_positions, formation_positions)
+        new_formation_positions = GenerateStrategicFormation(strategyData.ball_2d, 0)
+        point_preferences = role_assignment(strategyData.teammate_positions, new_formation_positions)
         strategyData.my_desired_position = point_preferences[strategyData.player_unum]
         strategyData.my_desried_orientation = strategyData.GetDirectionRelativeToMyPositionAndTarget(strategyData.my_desired_position)
 
         drawer.line(strategyData.mypos, strategyData.my_desired_position, 2,drawer.Color.blue,"target line")
 
-        if not strategyData.IsFormationReady(point_preferences):
-            return self.move(strategyData.my_desired_position, orientation=strategyData.my_desried_orientation)
-        #else:
-        #     return self.move(strategyData.my_desired_position, orientation=strategyData.ball_dir)
+        if strategyData.active_player_unum == strategyData.robot_model.unum: # I am the active player
+            drawer.annotation((0,10.5), "Pass Selector Phase" , drawer.Color.yellow, "status")
+            drawer.clear("pass line") # Clear previous pass line if any
+            drawer.clear("status") # Clear any previous status for this player
+
+            # Strategy to decide whether to pass or kick to the goal
+            target = (15,0) # Default target: opponent's goal
+            pass_reciever_unum = strategyData.player_unum + 1
+
+            # Simple pass strategy: pass to the next player if they exist and are not the last player
+            # This assumes player_unum is 1-indexed and there are up to 5 field players (excluding GK)
+            if pass_reciever_unum != 6: # Original logic: pass to next player if not player 5
+                # This assumes teammate_positions is a list of positions for players other than self,
+                # and that pass_reciever_unum-1 correctly indexes into it.
+                target = strategyData.teammate_positions[pass_reciever_unum-1]
+            else:
+                target = (15,0) # Shoot at goal if no valid pass target (or last player)
+
+            drawer.line(strategyData.mypos, target, 2,drawer.Color.red,"pass line")
+            return self.kickTarget(strategyData,strategyData.mypos,target)
+        else: # I am not the active player
+            drawer.clear("pass line") # Clear pass line for non-active players
+            drawer.annotation((0,10.5), "Role Assignment Phase" , drawer.Color.yellow, "status")
+
+            # Non-active players move to their formation positions
+            if not strategyData.IsFormationReady(point_preferences):
+                return self.move(strategyData.my_desired_position, orientation=strategyData.my_desried_orientation)
+            else:
+                # If already in formation, maintain position and orient towards the ball
+                return self.move(strategyData.my_desired_position, orientation=strategyData.ball_dir)
 
 
     
@@ -266,33 +284,7 @@ class Agent(Base_Agent):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     
-
     #--------------------------------------- Fat proxy auxiliary methods
 
 
