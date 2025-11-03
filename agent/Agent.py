@@ -204,83 +204,99 @@ class Agent(Base_Agent):
             self.scom.commit_and_send( self.fat_proxy_cmd.encode() ) 
             self.fat_proxy_cmd = ""
 
-
-
-        
-
-
-    def select_skill(self,strategyData):
+    def select_skill(self, strategyData):
         drawer = self.world.draw
         path_draw_options = self.path_manager.draw_options
 
-        # Calculate formation positions for all players
+        # --- 1. FORMATION AND ROLE ASSIGNMENT (Unchanged) ---
+        # This part is great. Players get their strategic positions.
         formation_positions = GenerateBasicFormation()
         new_formation_positions = GenerateStrategicFormation(strategyData.ball_2d, 0)
         point_preferences = role_assignment(strategyData.teammate_positions, new_formation_positions)
         strategyData.my_desired_position = point_preferences[strategyData.player_unum]
-        strategyData.my_desried_orientation = strategyData.GetDirectionRelativeToMyPositionAndTarget(strategyData.my_desired_position)
 
-        drawer.line(strategyData.mypos, strategyData.my_desired_position, 2,drawer.Color.blue,"target line")
+        # --- (Typo Fix) ---
+        # I fixed a typo here: "my_desried_orientation" is now "my_desired_orientation"
+        strategyData.my_desired_orientation = strategyData.GetDirectionRelativeToMyPositionAndTarget(
+            strategyData.my_desired_position)
 
-        if strategyData.active_player_unum == strategyData.robot_model.unum: # I am the active player
-            drawer.annotation((0,10.5), "Pass Selector Phase" , drawer.Color.yellow, "status")
-            drawer.clear("pass line") # Clear previous pass line if any
-            drawer.clear("status") # Clear any previous status for this player
+        drawer.line(strategyData.mypos, strategyData.my_desired_position, 2, drawer.Color.blue, "target line")
 
-            # Strategy to decide whether to pass or kick to the goal
-            target = (15,0) # Default target: opponent's goal
-            pass_reciever_unum = strategyData.player_unum + 1
+        # --- 2. NEW DYNAMIC ATTACK LOGIC ---
 
-            # Simple pass strategy: pass to the next player if they exist and are not the last player
-            # This assumes player_unum is 1-indexed and there are up to 5 field players (excluding GK)
-            if pass_reciever_unum != 6: # Original logic: pass to next player if not player 5
-                # This assumes teammate_positions is a list of positions for players other than self,
-                # and that pass_reciever_unum-1 correctly indexes into it.
-                target = strategyData.teammate_positions[pass_reciever_unum-1]
+        my_unum = strategyData.robot_model.unum
+        my_pos = strategyData.mypos
+        opp_goal_pos = (15.0, 0.0)  # Opponent goal position
+
+        # --- IF I AM THE ACTIVE PLAYER (closest to ball) ---
+        if strategyData.active_player_unum == my_unum:
+            drawer.annotation((0, 10.5), "Attacker: Finding Target", drawer.Color.yellow, "status")
+            drawer.clear("pass line")  # Clear previous pass line if any
+            drawer.clear("status")  # Clear any previous status for this player
+
+            # 1. Find the best teammate to pass to.
+            # "Best" = teammate closest to the opponent's goal (and not me).
+            best_pass_target_pos = None
+            best_pass_target_dist_to_goal = float('inf')
+
+            for i, pos in enumerate(strategyData.teammate_positions):
+                teammate_unum = i + 1  # unum is 1-indexed
+
+                # Skip if teammate data is missing or if it's me
+                if pos is None or teammate_unum == my_unum:
+                    continue
+
+                # Calculate this teammate's distance to the goal
+                dist_to_goal = np.linalg.norm(np.array(pos) - np.array(opp_goal_pos))
+
+                # If this teammate is the most advanced, remember them
+                if dist_to_goal < best_pass_target_dist_to_goal:
+                    best_pass_target_dist_to_goal = dist_to_goal
+                    best_pass_target_pos = pos
+
+            # 2. Decide: Should I shoot or pass?
+            my_dist_to_goal = np.linalg.norm(np.array(my_pos) - np.array(opp_goal_pos))
+
+            target_pos = opp_goal_pos  # Default to shooting
+
+            # --- Decision Criteria ---
+            # You can adjust this distance (e.g., 8.0)
+            if my_dist_to_goal < 8.0:
+                # I'm close enough, I'll shoot!
+                target_pos = opp_goal_pos
+                drawer.annotation((0, 10.0), "Action: SHOOT (Close)", drawer.Color.green, "action")
+
+            elif best_pass_target_pos is not None and best_pass_target_dist_to_goal < my_dist_to_goal:
+                # My teammate is in a *better* position (closer to goal), so I'll pass!
+                target_pos = best_pass_target_pos
+                drawer.annotation((0, 10.0), f"Action: PASS", drawer.Color.cyan, "action")
+
             else:
-                target = (15,0) # Shoot at goal if no valid pass target (or last player)
+                # I'm not close, but no one is in a better position. I'll shoot.
+                target_pos = opp_goal_pos
+                drawer.annotation((0, 10.0), "Action: SHOOT (Default)", drawer.Color.green, "action")
 
-            drawer.line(strategyData.mypos, target, 2,drawer.Color.red,"pass line")
-            return self.kickTarget(strategyData,strategyData.mypos,target)
-        else: # I am not the active player
-            drawer.clear("pass line") # Clear pass line for non-active players
-            drawer.annotation((0,10.5), "Role Assignment Phase" , drawer.Color.yellow, "status")
+            drawer.line(my_pos, target_pos, 2, drawer.Color.red, "pass line")
+            return self.kickTarget(strategyData, my_pos, target_pos)
 
-            # Non-active players move to their formation positions
+        # --- IF I AM NOT THE ACTIVE PLAYER ---
+        else:
+            drawer.clear("pass line")  # Clear pass line for non-active players
+            drawer.clear("action")
+            drawer.annotation((0, 10.5), "Supporter: Moving to Position", drawer.Color.yellow, "status")
+
+            # Non-active players move to their assigned formation positions
             if not strategyData.IsFormationReady(point_preferences):
-                return self.move(strategyData.my_desired_position, orientation=strategyData.my_desried_orientation)
+                return self.move(strategyData.my_desired_position, orientation=strategyData.my_desired_orientation)
             else:
                 # If already in formation, maintain position and orient towards the ball
                 return self.move(strategyData.my_desired_position, orientation=strategyData.ball_dir)
 
-
+        # --- IMPORTANT ---
+        # The duplicate "Example Behaviour" block that was here is
+        # unreachable code and has been removed. The logic above replaces it.
     
         #------------------------------------------------------
-        # Example Behaviour
-        target = (15,0) # Opponents Goal
-
-        if strategyData.active_player_unum == strategyData.robot_model.unum: # I am the active player 
-            drawer.annotation((0,10.5), "Pass Selector Phase" , drawer.Color.yellow, "status")
-        else:
-            drawer.clear_player()
-
-        if strategyData.active_player_unum == strategyData.robot_model.unum: # I am the active player 
-            pass_reciever_unum = strategyData.player_unum + 1 # This starts indexing at 1, therefore player 1 wants to pass to player 2
-            if pass_reciever_unum != 6:
-                target = strategyData.teammate_positions[pass_reciever_unum-1] # This is 0 indexed so we actually need to minus 1 
-            else:
-                target = (15,0) 
-
-            drawer.line(strategyData.mypos, target, 2,drawer.Color.red,"pass line")
-            return self.kickTarget(strategyData,strategyData.mypos,target)
-        else:
-            drawer.clear("pass line")
-            return self.move(strategyData.my_desired_position, orientation=strategyData.ball_dir)
-        
-
-
-
-
 
 
 
